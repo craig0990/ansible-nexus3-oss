@@ -30,6 +30,12 @@
     force: no
     copy: false
 
+- name: Stop system service
+  service:
+    name: nexus
+    state: stopped
+  ignore_errors: yes
+
 - name: Check if SystemD service is installed
   stat:
     path: /etc/systemd/system/nexus.service
@@ -38,6 +44,7 @@
 - name: Stop systemd service
   shell: 'systemctl stop nexus.service'
   when: nexus_systemd_service_file.stat.exists
+
 
 - name: Update symlink nexus-latest
   file:
@@ -162,10 +169,20 @@
     line: "application-host=127.0.0.1"
   when: httpd_setup_enable
 
+# Conditional taken from:
+# https://github.com/ansible/ansible/blob/a4131197e04c6663ba504f63f8d2cd3b9e1936c8/test/integration/targets/setup_postgresql_db/tasks/main.yml#L57
 - name: Create systemd service configuration
   template:
     src: "nexus.service"
     dest: "/etc/systemd/system"
+  when: ansible_service_mgr == "systemd"
+
+- name: Create SysV service configuration
+  file:
+    src: "{{ nexus_installation_dir }}/nexus-latest/bin/nexus"
+    dest: "/etc/init.d/nexus"
+    state: link
+  when: ansible_service_mgr != "systemd"
 
 # systemd available from ansible 2.2 only
 # - name: Enable nexus service
@@ -200,12 +217,17 @@
 
 - name: Reload systemd service configuration
   shell: 'systemctl daemon-reload'
+  when: ansible_os_family == "RedHat" and ansible_service_mgr == "systemd"
 
-- name: Enable systemd service
-  shell: 'systemctl enable nexus.service'
+- name: Enable system service
+  service:
+    name: nexus
+    enabled: yes
 
-- name: Restart systemd service
-  shell: 'systemctl restart nexus.service'
+- name: Restart system service
+  service:
+    name: nexus
+    state: restarted
 
 - name: Waiting for Nexus service to be ready...
   wait_for:
